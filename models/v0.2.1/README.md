@@ -1,0 +1,2 @@
+# v0.2.1
+Cleaned and streamlined version of v0.2.0 prepared for publication, with unnecessary components removed and structure aligned with the 2026 journal paper: *“Battery Degradation and Replacement Cost Impacts on Profitability in Electric Light Utility Aircraft using a Multiphysics Modeling Approach.”*
