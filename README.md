@@ -37,6 +37,7 @@ Cite this as:
   title  = {Electric Light Utility Aircraft Multiphysics Model},    
   groups = {ARTS-Lab},    
   url    = {https://github.com/ARTS-Laboratory/ARTS-Laboratory/electric-light-utility-aircraft-multiphysics-model},   
+  notes  = {Accessed: Month dd, yyyy},   
 }
 
 <p align="center">
