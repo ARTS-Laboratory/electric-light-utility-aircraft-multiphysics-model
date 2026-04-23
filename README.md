@@ -36,7 +36,7 @@ Cite this as:
   howpublished = {GitHub},  
   title  = {Electric Light Utility Aircraft Multiphysics Model},    
   groups = {ARTS-Lab},    
-  url    = {https://github.com/ARTS-Laboratory/ARTS-Laboratory/electric-light-utility-aircraft-multiphysics-model},   
+  url    = {https://github.com/ARTS-Laboratory/electric-light-utility-aircraft-multiphysics-model},   
   note  = {Accessed: Month dd, yyyy},   
 }
 
