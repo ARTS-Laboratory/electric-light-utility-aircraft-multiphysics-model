@@ -1,0 +1,238 @@
+component ModuleType1
+    % ModuleType1:2
+    % Module Block
+    %    Model resolution: Grouped
+    %    Number of parallel assemblies: 6
+    %    Number of cells per parallel assembly: 30
+    %    Series grouping simulation strategy: [6]
+    %    Parallel grouping simulation strategy: [1]
+    %
+    %    MATLAB version: 25.1
+    %    Simscape Battery version: 25.1
+    %    Simscape code generated on: 16-Dec-2025 16:02:52
+
+    parameters
+        SOC_vecCell = {[0, .1, .25, .5, .75, .9, 1],'1'}; % Vector of state-of-charge values, SOC
+        T_vecCell = {[278, 293, 313],'K'}; % Vector of temperatures, T
+        V0_matCell = {[3.49, 3.5, 3.51; 3.55, 3.57, 3.56; 3.62, 3.63, 3.64; 3.71, 3.71, 3.72; 3.91, 3.93, 3.94; 4.07, 4.08, 4.08; 4.19, 4.19, 4.19],'V'}; % Open-circuit voltage, V0(SOC,T)
+        V_rangeCell = {[0, inf],'V'}; % Terminal voltage operating range [Min Max]
+        R0_dis_matCell = {[.0117, .0085, .009; .011, .0085, .009; .0114, .0087, .0092; .0107, .0082, .0088; .0107, .0083, .0091; .0113, .0085, .0089; .0116, .0085, .0089],'Ohm'}; % Terminal resistance during discharging, R0(SOC,T)
+        R0_ch_matCell = {[.0117, .0085, .009; .011, .0085, .009; .0114, .0087, .0092; .0107, .0082, .0088; .0107, .0083, .0091; .0113, .0085, .0089; .0116, .0085, .0089],'Ohm'}; % Terminal resistance during charging, R0(SOC,T)
+        AHCell = {27,'A*hr'}; % Cell capacity, AH
+        extrapolation_optionCell = {simscape.enum.extrapolation.nearest,'1'}; % Extrapolation method for all tables
+        N0Cell = {100,'1'}; % Number of discharge cycles, N
+        dV0Cell = {0,'1'}; % Change in open-circuit voltage after N discharge cycles (%)
+        dR0Cell = {0,'1'}; % Change in terminal resistance after N discharge cycles (%)
+        dAHCell = {0,'1'}; % Change in cell capacity after N discharge cycles (%)
+        storage_dt_age_vecCell = {[0],'d'}; % Vector of time intervals
+        storage_T_age_vecCell = {[273],'K'}; % Vector of storage temperatures
+        OCV_ageCell = {0.9,'1'}; % Normalized open-circuit voltage during storage, V/Vnom
+        OCV_scaling_age_resistanceCell = {2.2134e6,'1'}; % Terminal resistance linear scaling for voltage, b
+        OCV_offset_age_resistanceCell = {1.632e6,'1'}; % Terminal resistance constant offset for voltage, c
+        temp_exp_age_resistanceCell = {0.515833569,'V'}; % Terminal resistance temperature-dependent exponential increase, d
+        t_exp_age_resistanceCell = {0.75,'1'}; % Terminal resistance time exponent, a
+        OCV_scaling_age_capacityCell = {1.5097e07,'1'}; % Capacity linear scaling for voltage, b
+        OCV_offset_age_capacityCell = {8.3625e06,'1'}; % Capacity constant offset for voltage, c
+        temp_exp_age_capacityCell = {0.6011,'V'}; % Capacity temperature-dependent exponential decrease, d
+        t_exp_age_capacityCell = {0.75,'1'}; % Capacity time exponent, a
+        thermal_massCell = {100,'J/K'}; % Thermal mass
+        CellBalancingClosedResistance = {0.01,'Ohm'}; % Cell balancing switch closed resistance
+        CellBalancingOpenConductance = {1e-8,'1/Ohm'}; % Cell balancing switch open conductance
+        CellBalancingThreshold = {0.5,'1'}; % Cell balancing switch operation threshold
+        CellBalancingResistance = {50,'Ohm'}; % Cell balancing shunt resistance
+        CoolantResistance = {1.2,'K/W'}; % Cell level coolant thermal path resistance
+    end
+
+    parameters(ExternalAccess=none)
+        P = 30; % Batteries in Parallel
+        S = 6; % Batteries in Series
+        SeriesGrouping = 6; % Series grouping simulation strategy
+        ParallelGrouping = 1; % Parallel grouping simulation strategy
+        NumCellThermalNodeElements = size(Cell1(1).H,1); % NumCellThermalNodeElements
+    end
+
+    parameters(Access=private)
+        CumNumModules = cumsum(SeriesGrouping); % Cumulative number of modules
+        TotalNumModels = sum(ParallelGrouping); % Total number of cell models
+        ModelToLumpMapping = 1; % Mapping of models to lumps
+        SeriesConnections = find(diff(ModelToLumpMapping)) + 1; % Series connections
+        ParallelConnections = find(~diff(ModelToLumpMapping)) + 1; % Parallel connections
+        CoolantResistanceScaled = CoolantResistance .* repmat(ParallelGrouping(ModelToLumpMapping) ./ (P .* SeriesGrouping(ModelToLumpMapping)),1,1); % Scaled cell level coolant thermal path resistance
+    end
+
+    inputs
+        enableCellBalancing = {repmat(0,S,1),'1'}; % CB
+    end
+
+    outputs
+        socOutCell; % SOC
+    end
+
+    nodes
+        p = foundation.electrical.electrical; % +
+        n = foundation.electrical.electrical; % -
+    end
+
+    variables
+        iCell = {0,'A'}; % Cell current (positive in)
+        vCell = {0,'V'}; % Cell terminal voltage
+        socCell = {value={1,'1'},priority=priority.high}; % Cell state of charge
+        numCyclesCell = {value={0,'1'},priority=priority.high}; % Cell discharge cycles
+        temperatureCell = {value={298.15,'K'},priority=priority.high}; % Cell temperature
+        vParallelAssembly = {value={repmat(0,6,1),'V'},priority=priority.none}; % Parallel Assembly Voltage
+        socParallelAssembly = {value={repmat(1,6,1),'1'},priority=priority.none}; % Parallel Assembly state of charge
+    end
+
+    intermediates
+        power_dissipated = sum([Cell1(:).power_dissipated].*((P./ParallelGrouping(ModelToLumpMapping).*SeriesGrouping(ModelToLumpMapping))-1)); % Power dissipated by grouped cells
+    end
+
+    equations
+        assert(length(iCell) == TotalNumModels);
+        assert(length(vCell) == TotalNumModels);
+        assert(length(socCell) == TotalNumModels);
+        assert(length(numCyclesCell) == TotalNumModels);
+        assert(length(temperatureCell) == TotalNumModels);
+        assert(length(vParallelAssembly) == S);
+        assert(length(socParallelAssembly) == S);
+        assert(isequal(size(CoolantResistance),[1,1]) || isequal(size(CoolantResistance),[1,TotalNumModels]),...
+            'Cell level coolant thermal path resistance must be scalar or an M-by-N array where M is the number of cooling plates that connect to the cell and N is the number of cells that the block models.');
+        socOutCell == [Cell1(:).soc];
+    end
+
+    connections
+        connect(p,PositiveAdapter(1).LumpedNode);
+        connect(n,NegativeAdapter(TotalNumModels).LumpedNode);
+    end
+
+    annotations
+        [p] : Side=top;
+        [n] : Side=bottom;
+        [BottomExtClnt] : Side=bottom;
+        UILayout = [UIGroup("Main",SOC_vecCell,T_vecCell,V0_matCell,V_rangeCell,R0_dis_matCell,R0_ch_matCell,AHCell,extrapolation_optionCell),...
+            UIGroup("Fade",N0Cell,dV0Cell,dR0Cell,dAHCell),...
+            UIGroup("Calendar Aging",storage_dt_age_vecCell,storage_T_age_vecCell,OCV_ageCell,OCV_scaling_age_resistanceCell,OCV_offset_age_resistanceCell,temp_exp_age_resistanceCell,t_exp_age_resistanceCell,OCV_scaling_age_capacityCell,OCV_offset_age_capacityCell,temp_exp_age_capacityCell,t_exp_age_capacityCell),...
+            UIGroup("Thermal",thermal_massCell,CoolantResistance),...
+            UIGroup("Cell Balancing",CellBalancingClosedResistance,CellBalancingOpenConductance,CellBalancingThreshold,CellBalancingResistance)];
+        Icon = 'module.svg';
+    end
+
+    for modelIdx = 1:TotalNumModels
+        components(ExternalAccess=observe,CompileReuse=true)
+            Cell1(modelIdx) = batteryecm.table_battery(SOC_vec = SOC_vecCell,...
+                T_vec = T_vecCell,V0_mat = V0_matCell,V_range = V_rangeCell,...
+                R0_dis_mat = R0_dis_matCell,R0_ch_mat = R0_ch_matCell,AH = AHCell,...
+                extrapolation_option = extrapolation_optionCell,N0 = N0Cell,dV0 = dV0Cell,dR0 = dR0Cell,...
+                dAH = dAHCell,storage_dt_age_vec = storage_dt_age_vecCell,...
+                storage_T_age_vec = storage_T_age_vecCell,OCV_age = OCV_ageCell,...
+                OCV_scaling_age_resistance = OCV_scaling_age_resistanceCell,...
+                OCV_offset_age_resistance = OCV_offset_age_resistanceCell,temp_exp_age_resistance = temp_exp_age_resistanceCell,...
+                t_exp_age_resistance = t_exp_age_resistanceCell,...
+                OCV_scaling_age_capacity = OCV_scaling_age_capacityCell,...
+                OCV_offset_age_capacity = OCV_offset_age_capacityCell,temp_exp_age_capacity = temp_exp_age_capacityCell,...
+                t_exp_age_capacity = t_exp_age_capacityCell,thermal_mass = thermal_massCell,...
+                SOC_port = simscape.enum.tablebattery.enable.yes,...
+                T_dependence = simscape.enum.tablebattery.temperature_dependence.yes,...
+                prm_age_OCV = simscape.enum.tablebattery.prm_age_OCV.OCV,...
+                prm_age_capacity = simscape.enum.tablebattery.prm_age.enabled,...
+                prm_age_modeling = simscape.enum.tablebattery.prm_age_modeling.equation,...
+                prm_age_resistance = simscape.enum.tablebattery.prm_age.enabled,...
+                prm_dir = simscape.enum.tablebattery.prm_dir.currentDirectionality,prm_dyn = simscape.enum.tablebattery.prm_dyn.off,...
+                prm_fade = simscape.enum.tablebattery.prm_fade.equations,...
+                prm_leak = simscape.enum.tablebattery.prm_leak.disabled,...
+                thermal_port = simscape.enum.thermaleffects.model,i.priority = priority.none,v.priority = priority.none,...
+                stateOfCharge.priority = priority.none,num_cycles.priority = priority.none,...
+                cell_temperature.priority = priority.none);
+        end
+
+        components(Access=private)
+            PositiveAdapter(modelIdx) = cylindricalPack_58kwhr_30Q_fadeLumpingAdapters.ElectricalLumpingAdapter(...
+                CellsInParallel = P/ParallelGrouping(ModelToLumpMapping(modelIdx)),...
+                CellsInSeries = SeriesGrouping(ModelToLumpMapping(modelIdx)));
+            NegativeAdapter(modelIdx) = cylindricalPack_58kwhr_30Q_fadeLumpingAdapters.ElectricalLumpingAdapter(...
+                CellsInParallel = P/ParallelGrouping(ModelToLumpMapping(modelIdx)),...
+                CellsInSeries = SeriesGrouping(ModelToLumpMapping(modelIdx)));
+        end
+
+        connections
+            connect(NegativeAdapter(modelIdx).CellNode,Cell1(modelIdx).n);
+            connect(PositiveAdapter(modelIdx).CellNode,Cell1(modelIdx).p);
+        end
+
+        for thermalNodeElementIdx = 1:NumCellThermalNodeElements
+            components(Access=private)
+                ThermalAdapter(thermalNodeElementIdx,modelIdx) = cylindricalPack_58kwhr_30Q_fadeLumpingAdapters.ThermalLumpingAdapter(...
+                    CellsInParallel = SeriesGrouping(ModelToLumpMapping(modelIdx))*P/ParallelGrouping(ModelToLumpMapping(modelIdx)));
+            end
+
+            connections
+                connect([ThermalAdapter(:,modelIdx).CellNode],[Cell1(modelIdx).H(:,1)]');
+            end
+        end
+    end
+
+    for parallelConnectionsIdx = ParallelConnections
+        connections
+            connect(PositiveAdapter(parallelConnectionsIdx-1).LumpedNode,PositiveAdapter(parallelConnectionsIdx).LumpedNode);
+            connect(NegativeAdapter(parallelConnectionsIdx-1).LumpedNode,NegativeAdapter(parallelConnectionsIdx).LumpedNode);
+        end
+    end
+
+    for seriesConnectionsIdx = SeriesConnections
+        connections
+            connect(NegativeAdapter(seriesConnectionsIdx-1).LumpedNode,PositiveAdapter(seriesConnectionsIdx).LumpedNode);
+        end
+    end
+
+    for lumpIdx = 1:length(SeriesGrouping)
+        components(ExternalAccess=observe)
+            balancingSwitch(lumpIdx) = foundation.electrical.elements.controlled_switch(...
+                R_closed = CellBalancingClosedResistance*SeriesGrouping(lumpIdx),...
+                G_open = CellBalancingOpenConductance,...
+                Threshold = CellBalancingThreshold);
+            balancingResistor(lumpIdx) = foundation.electrical.elements.resistor(R = CellBalancingResistance*SeriesGrouping(lumpIdx));
+        end
+
+        connections
+            connect(Cell1(find(lumpIdx==ModelToLumpMapping)).p,balancingSwitch(lumpIdx).p);
+            connect(balancingSwitch(lumpIdx).n,balancingResistor(lumpIdx).p);
+            connect(balancingResistor(lumpIdx).n,Cell1(find(lumpIdx==ModelToLumpMapping)).n);
+            connect(enableCellBalancing(CumNumModules(lumpIdx)-SeriesGrouping(lumpIdx)+1),balancingSwitch(lumpIdx).vT);
+        end
+    end
+
+    for lumpIdx = 1:length(SeriesGrouping)
+        equations
+            vParallelAssembly((CumNumModules(lumpIdx)-SeriesGrouping(lumpIdx)+1):CumNumModules(lumpIdx)) == ...
+                (Cell1(find(lumpIdx==ModelToLumpMapping,1)).p.v - Cell1(find(lumpIdx==ModelToLumpMapping,1)).n.v) .* ones(SeriesGrouping(lumpIdx),1);
+            socParallelAssembly((CumNumModules(lumpIdx)-SeriesGrouping(lumpIdx)+1):CumNumModules(lumpIdx)) == ...
+                (sum([Cell1(find(lumpIdx==ModelToLumpMapping)).stateOfCharge]) / ParallelGrouping(lumpIdx)) * ones(SeriesGrouping(lumpIdx),1);
+        end
+    end
+
+    for modelIdx = 1:TotalNumModels
+        equations
+            iCell(modelIdx) == Cell1(modelIdx).i;
+            vCell(modelIdx) == Cell1(modelIdx).v;
+            socCell(modelIdx) == Cell1(modelIdx).stateOfCharge;
+            numCyclesCell(modelIdx) == Cell1(modelIdx).num_cycles;
+            temperatureCell(modelIdx) == Cell1(modelIdx).cell_temperature;
+        end
+    end
+
+    for modelIdx = 1:TotalNumModels
+        nodes
+            BottomExtClnt(modelIdx) = foundation.thermal.thermal; % CPB
+        end
+
+        components(ExternalAccess=observe)
+            CoolantResistorBottom(modelIdx) = foundation.thermal.elements.resistance(...
+                resistance = CoolantResistanceScaled(end,modelIdx));
+        end
+
+        connections
+            connect(ThermalAdapter(end,modelIdx).LumpedNode,CoolantResistorBottom(modelIdx).A);
+            connect(BottomExtClnt(modelIdx),CoolantResistorBottom(modelIdx).B);
+        end
+    end
+end
